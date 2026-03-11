@@ -59,11 +59,11 @@ const App: React.FC = () => {
     setError('');
   };
 
-  const handleAddProperty = async (name: string, address: string, cityId: string, activeBillTypeIds: string[], assignedAdminId?: string) => {
+  const handleAddProperty = async (name: string, address: string, cityId: string, activeBillTypeIds: string[], rentAmount: number, assignedAdminId?: string) => {
     if (!user) return;
     try {
       setIsLoading(true);
-      const newProp = await api.addProperty(user, name, address, cityId, activeBillTypeIds, assignedAdminId);
+      const newProp = await api.addProperty(user, name, address, cityId, activeBillTypeIds, rentAmount, assignedAdminId);
       setProperties(prev => [...prev, newProp]);
     } catch (err: any) {
       alert(err.message);
@@ -72,11 +72,11 @@ const App: React.FC = () => {
     }
   };
 
-  const updateBillStatus = async (billId: string, newStatus: BillStatus) => {
+  const updateBillStatus = async (billId: string, updates: Partial<Bill>) => {
     if (!user) return;
     try {
       setIsLoading(true);
-      const updatedBill = await api.updateBillStatus(user, billId, newStatus);
+      const updatedBill = await api.updateBillEntry(user, billId, updates);
       setBills(prev => prev.map(b => b.id === billId ? updatedBill : b));
       if (user.role === 'SUPER_ADMIN') {
         const logs = await api.getAuditLogs(user);
@@ -97,11 +97,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddAdmin = async (name: string, email: string) => {
+  const handleAddAdmin = async (name: string, email: string, password: string) => {
     if (!user) return;
     try {
       setIsLoading(true);
-      const updatedUsers = await api.addAdmin(user, name, email);
+      const updatedUsers = await api.addAdmin(user, name, email, password);
       setUsers(updatedUsers);
     } catch (err: any) {
       alert(err.message);

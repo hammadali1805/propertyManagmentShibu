@@ -34,14 +34,14 @@ export const api = {
   getUserByEmail: async (email: string) => users.find(u => u.email === email),
 
   // Super Admin: Field Ops Management
-  addAdmin: async (user: User, name: string, email: string) => {
+  addAdmin: async (user: User, name: string, email: string, password: string) => {
     if (user.role !== 'SUPER_ADMIN') throw new Error('Unauthorized');
     const newAdmin: User = {
       id: `u-${Date.now()}`,
       name,
       email,
       role: 'ADMIN',
-      password: 'password123' // Default password for demo
+      password
     };
     users.push(newAdmin);
     return [...users];
@@ -125,15 +125,16 @@ export const api = {
     return [...properties];
   },
 
-  addProperty: async (user: User, name: string, address: string, cityId: string, activeBillTypeIds: string[], assignedAdminId?: string): Promise<Property> => {
+  addProperty: async (user: User, name: string, address: string, cityId: string, activeBillTypeIds: string[], rentAmount: number, assignedAdminId?: string): Promise<Property> => {
     if (user.role !== 'SUPER_ADMIN') throw new Error('Unauthorized');
     const newProp: Property = {
       id: `p${Date.now()}`,
       name,
       address,
       cityId,
-      activeBillTypeIds: activeBillTypeIds,
-      assignedAdminId
+      activeBillTypeIds: ['bt-rent', ...activeBillTypeIds], // Always include Rent
+      assignedAdminId,
+      rentAmount
     };
     properties = [...properties, newProp];
     return newProp;
@@ -150,6 +151,7 @@ export const api = {
       amount: entry.amount,
       attachmentName: entry.attachmentName,
       status: entry.status || BillStatus.UNPAID,
+      remarks: entry.remarks,
       updatedAt: new Date().toISOString()
     };
     bills = [...bills, newBill];
@@ -174,7 +176,7 @@ export const api = {
     return newBill;
   },
 
-  updateBillStatus: async (user: User, billId: string, newStatus: BillStatus): Promise<Bill> => {
+  updateBillEntry: async (user: User, billId: string, updates: Partial<Bill>): Promise<Bill> => {
     if (user.role !== 'ADMIN') throw new Error('Unauthorized');
     const idx = bills.findIndex(b => b.id === billId);
     if (idx === -1) throw new Error('Bill not found');
@@ -183,7 +185,11 @@ export const api = {
     if (!getEditableDates().includes(bill.billingDate)) throw new Error('Date Locked');
 
     const oldStatus = bill.status;
-    const updated = { ...bill, status: newStatus, updatedAt: new Date().toISOString() };
+    const updated = { 
+      ...bill, 
+      ...updates,
+      updatedAt: new Date().toISOString() 
+    };
     
     const prop = properties.find(p => p.id === bill.propertyId);
     const bt = billTypes.find(t => t.id === bill.billTypeId);
@@ -195,7 +201,7 @@ export const api = {
       billType: bt?.name || 'Unknown',
       billingDate: bill.billingDate,
       oldStatus,
-      newStatus,
+      newStatus: updated.status,
       updatedBy: user.name,
       updatedById: user.id,
       timestamp: new Date().toISOString()

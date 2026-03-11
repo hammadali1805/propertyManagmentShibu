@@ -7,10 +7,18 @@ interface PropertyCalendarProps {
   billConfigs: BillConfig[];
   bills: Bill[];
   billTypes: BillType[];
+  selectedDate: string;
+  onDateChange: (date: string) => void;
 }
 
-const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billConfigs, bills, billTypes }) => {
-  const [currentDate, setCurrentDate] = useState(new Date());
+const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billConfigs, bills, billTypes, selectedDate, onDateChange }) => {
+  const currentDate = useMemo(() => {
+    if (!selectedDate) return new Date();
+    const parts = selectedDate.split('-');
+    if (parts.length < 2) return new Date();
+    const [y, m, d] = parts.map(Number);
+    return new Date(y, m - 1, d || 1);
+  }, [selectedDate]);
 
   const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -76,9 +84,12 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
     // 2. Handle Actual Bill Records
     if (Array.isArray(bills)) {
       bills.filter(b => b.propertyId === propertyId).forEach(bill => {
-        const bDate = new Date(bill.billingDate);
-        if (bDate.getFullYear() === year && bDate.getMonth() === month) {
-          const day = bDate.getDate();
+        if (!bill.billingDate) return;
+        const parts = bill.billingDate.split('-');
+        if (parts.length < 2) return;
+        const [bY, bM, bD] = parts.map(Number);
+        if (bY === year && (bM - 1) === month) {
+          const day = bD;
           const bt = Array.isArray(billTypes) ? billTypes.find(t => t.id === bill.billTypeId) : undefined;
           
           if (!dates[day]) dates[day] = [];
@@ -97,7 +108,10 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
   }, [billConfigs, propertyId, year, month, billTypes, bills]);
 
   const changeMonth = (offset: number) => {
-    setCurrentDate(new Date(year, month + offset, 1));
+    const nextDate = new Date(year, month + offset, 1);
+    const nextY = nextDate.getFullYear();
+    const nextM = String(nextDate.getMonth() + 1).padStart(2, '0');
+    onDateChange(`${nextY}-${nextM}-01`);
   };
 
   return (
@@ -113,6 +127,17 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
           </div>
         </div>
         <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              const d = new Date();
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              onDateChange(`${y}-${m}-01`);
+            }}
+            className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[8px] font-black uppercase tracking-widest transition-colors mr-2"
+          >
+            Today
+          </button>
           <button 
             onClick={() => changeMonth(-1)}
             className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center transition-colors"
@@ -142,12 +167,23 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
             const events = day ? (importantDates[day] || []) : [];
             const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
             
+            const hasPaid = events.some(e => e.status === 'PAID');
+            const hasUnpaid = events.some(e => e.status === 'UNPAID');
+            const hasDeadline = events.some(e => e.type === 'DEADLINE');
+
+            let dayBgClass = 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-md';
+            if (day) {
+              if (hasUnpaid) dayBgClass = 'bg-rose-50/40 border-rose-200 hover:bg-rose-50/60';
+              else if (hasDeadline) dayBgClass = 'bg-amber-50/40 border-amber-200 hover:bg-amber-50/60';
+              else if (hasPaid) dayBgClass = 'bg-emerald-50/40 border-emerald-200 hover:bg-emerald-50/60';
+            } else {
+              dayBgClass = 'bg-slate-50/30 border-transparent';
+            }
+
             return (
               <div 
                 key={idx} 
-                className={`min-h-[60px] sm:min-h-[80px] p-2 rounded-xl border transition-all relative ${
-                  day ? 'bg-white border-slate-50' : 'bg-slate-50/30 border-transparent'
-                } ${isToday ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+                className={`min-h-[60px] sm:min-h-[80px] p-2 rounded-xl border transition-all relative ${dayBgClass} ${isToday ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
               >
                 {day && (
                   <>
@@ -155,7 +191,7 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
                       {day}
                     </span>
                     <div className="mt-1 space-y-1">
-                      {Array.isArray(events) && events.map((event, eIdx) => (
+                      {Array.isArray(events) && events.slice(0, 2).map((event, eIdx) => (
                         <div 
                           key={eIdx}
                           className={`px-1.5 py-0.5 border rounded text-[7px] font-black uppercase truncate flex items-center gap-1 ${event.color}`}
@@ -165,6 +201,11 @@ const PropertyCalendar: React.FC<PropertyCalendarProps> = ({ propertyId, billCon
                           <span className="hidden sm:inline">{event.label}</span>
                         </div>
                       ))}
+                      {events.length > 2 && (
+                        <div className="text-[6px] font-black text-slate-400 px-1 uppercase">
+                          + {events.length - 2} more
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

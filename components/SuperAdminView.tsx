@@ -9,11 +9,11 @@ import FileViewer from './FileViewer';
 interface SuperAdminViewProps {
   properties: Property[];
   bills: Bill[];
-  onAddProperty: (name: string, address: string, cityId: string, activeBillTypeIds: string[], assignedAdminId?: string) => void;
+  onAddProperty: (name: string, address: string, cityId: string, activeBillTypeIds: string[], rentAmount: number, assignedAdminId?: string) => void;
   auditLogs: AuditLog[];
   user: User;
   users: User[];
-  onAddAdmin: (name: string, email: string) => void;
+  onAddAdmin: (name: string, email: string, password: string) => void;
   onDeleteAdmin: (adminId: string) => void;
   onAssignProperty: (propertyId: string, adminId: string) => void;
   onUnassignProperty: (propertyId: string) => void;
@@ -40,6 +40,12 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   const [showAddProp, setShowAddProp] = useState(false);
   const [configPropId, setConfigPropId] = useState<string | null>(null);
   const [viewingPropId, setViewingPropId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const date = new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  });
   const [chatPropId, setChatPropId] = useState<string | null>(null);
   const [viewingAttachment, setViewingAttachment] = useState<string | null>(null);
   
@@ -137,11 +143,12 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     const name = d.get('name') as string;
     const address = d.get('address') as string;
     const cityId = d.get('cityId') as string;
+    const rentAmount = Number(d.get('rentAmount')) || 0;
     if (!name || !address || !cityId) {
       alert('Please fill all required fields');
       return;
     }
-    onAddProperty(name, address, cityId, selectedBillTypeIds, d.get('assignedAdminId') as string || undefined);
+    onAddProperty(name, address, cityId, selectedBillTypeIds, rentAmount, d.get('assignedAdminId') as string || undefined);
     setShowAddProp(false);
     setSelectedBillTypeIds([]);
   };
@@ -157,9 +164,42 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     const d = new FormData(e.currentTarget);
     const name = d.get('name') as string;
     const email = d.get('email') as string;
-    if (!name || !email) return;
-    onAddAdmin(name, email);
+    const password = d.get('password') as string;
+    if (!name || !email || !password) return;
+    onAddAdmin(name, email, password);
     setShowAddAdminModal(false);
+  };
+
+  const handleDownloadReport = (propId: string) => {
+    const prop = properties.find(p => p.id === propId);
+    if (!prop) return;
+    
+    const propBills = bills.filter(b => b.propertyId === propId);
+    const headers = ['Billing Date', 'Utility', 'Amount', 'Status', 'Remarks', 'Updated At'];
+    const csvContent = [
+      headers.join(','),
+      ...propBills.map(b => {
+        const bt = billTypes.find(t => t.id === b.billTypeId);
+        return [
+          b.billingDate,
+          bt?.name || 'Unknown',
+          b.amount || 0,
+          b.status,
+          `"${(b.remarks || '').replace(/"/g, '""')}"`,
+          b.updatedAt
+        ].join(',');
+      })
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${prop.name}_Report.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const groupedProperties = useMemo(() => {
@@ -178,7 +218,17 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
 
     const activeBTs = billTypes.filter(bt => prop.activeBillTypeIds.includes(bt.id));
     const propBills = bills.filter(b => b.propertyId === viewingPropId);
-    const uniqueDates: string[] = Array.from(new Set(propBills.map(b => b.billingDate)));
+    
+    // Filter unique dates to only show those in the selected month/year
+    const [selY, selM] = selectedDate.split('-').map(Number);
+    const uniqueDates: string[] = Array.from(new Set<string>(propBills.map(b => b.billingDate)))
+      .filter((dateStr: string) => {
+        const parts = dateStr.split('-');
+        if (parts.length < 2) return false;
+        const [y, m] = parts.map(Number);
+        return y === selY && m === selM;
+      });
+    
     uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
     return {
@@ -192,7 +242,7 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         })
       }))
     };
-  }, [viewingPropId, properties, bills, billTypes]);
+  }, [viewingPropId, properties, bills, billTypes, selectedDate]);
 
   // RENDER DEDICATED HISTORY PAGE
   if (viewingPropId && historyMatrix) {
@@ -210,7 +260,13 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             </button>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight truncate">{historyMatrix.property.name}</h1>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{historyMatrix.property.address} • {city?.name}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">{historyMatrix.property.address} • {city?.name}</p>
+                <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
+                  {new Date(selectedDate).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                </p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -303,6 +359,8 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
               billConfigs={billConfigs} 
               bills={bills} 
               billTypes={billTypes} 
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
             />
           </div>
         </div>
@@ -410,6 +468,9 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                                     <i className="fas fa-comments text-[10px]"></i>
                                   </button>
                                   <button onClick={() => setConfigPropId(p.id)} className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-colors">Config</button>
+                                  <button onClick={() => handleDownloadReport(p.id)} className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-600 hover:text-white shadow-sm transition-colors" title="Download CSV">
+                                    <i className="fas fa-download text-[10px]"></i>
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -885,6 +946,10 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                   <option value="">Assign Field Ops (Optional)</option>
                   {users.filter(u => u.role === 'ADMIN').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
+                <div className="relative">
+                  <i className="fas fa-indian-rupee-sign absolute left-5 top-1/2 -translate-y-1/2 text-slate-300"></i>
+                  <input name="rentAmount" type="number" required placeholder="Monthly Rent Amount" className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl sm:rounded-2xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10" />
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                 <label className="text-[9px] font-black text-slate-400 uppercase px-2 mb-1 block">Active Utilities</label>
@@ -945,6 +1010,7 @@ const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             <form onSubmit={handleAddAdminSubmit} className="space-y-4">
               <input name="name" required placeholder="Full Name" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10" />
               <input name="email" type="email" required placeholder="Business Email" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10" />
+              <input name="password" type="password" required placeholder="Set Password" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold outline-none focus:ring-4 focus:ring-blue-500/10" />
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={() => setShowAddAdminModal(false)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px] tracking-widest">Cancel</button>
                 <button type="submit" className="flex-2 py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl">Create Account</button>

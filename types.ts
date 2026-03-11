@@ -50,6 +50,7 @@ export interface Property {
   cityId: string;
   activeBillTypeIds: string[]; // List of bill types enabled for this property
   assignedAdminId?: string; // ID of the Field Ops (Admin) assigned to this property
+  rentAmount: number; // Monthly rent for the property
 }
 
 export interface Bill {
@@ -60,6 +61,7 @@ export interface Bill {
   amount?: number;
   attachmentName?: string;
   status: BillStatus;
+  remarks?: string; // Field Ops remarks
   updatedAt: string;
 }
 
