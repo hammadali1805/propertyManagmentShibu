@@ -14,7 +14,7 @@ async function startServer() {
     },
   });
 
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // In-memory store for chat messages (for demo purposes)
   const chatMessages: any[] = [];
